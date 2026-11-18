@@ -1,0 +1,61 @@
+SONAR DISCORD MUTE
+==================
+
+NE İŞE YARAR?
+SteelSeries Sonar kullanırken Discord'da sesli ekran paylaşınca oluşan yankı
+sorununu çözer. Yaptığı şey, ses düzeyi karıştırıcısında
+"SteelSeries Sonar - Microphone" cihazında Discord'un sesini kapatmakla aynıdır.
+Farkı: bunu sürekli kapalı tutar. Discord yeni bir ses oturumu açsa ya da biri
+sesi geri açsa bile program anında tekrar kapatır.
+
+
+KURULUM (bir kere yapılır)
+1. SonarDiscordMute.exe'yi kalıcı bir klasöre koy (örnek: Belgeler\SonarDiscordMute).
+   İndirilenler'de bırakıp sonra silme; Windows açılışında oradan başlatılıyor.
+2. SteelSeries GG (Sonar) açıkken exe'ye çift tıkla.
+3. "Windows bilgisayarınızı korudu" uyarısı çıkarsa: "Ek bilgi" > "Yine de çalıştır".
+   (Program imzasız olduğu için bu uyarı çıkar.)
+4. Açılan pencerede "SteelSeries Sonar - Microphone" kendiliğinden seçili gelir.
+   "Kaydet ve başlat"a bas. Bu kadar.
+
+
+SONRASI
+- Pencere bir daha açılmaz. Windows açılınca arka planda kendiliğinden başlar.
+- Saatin yanında küçük bir simge olur (görünmüyorsa ^ ok işaretine tıkla):
+    yeşil   = çalışıyor
+    turuncu = Sonar cihazı bulunamadı (SteelSeries GG kapalı olabilir)
+    gri     = duraklatıldı
+- Simgeye sağ tıkla: Duraklat / Cihazı değiştir / Windows açılışında başlat / Çıkış
+- Exe'ye tekrar çift tıklarsan ya da simgeye çift tıklarsan ayar penceresi açılır.
+- Bilgisayar kapanınca da Discord o cihazda kapalı kalır (Windows bunu hatırlar).
+  Sadece menüden "Çıkış" dersen Discord'un sesi o cihazda geri açılır.
+
+
+GÜNCELLEME
+Yeni sürümün exe'sine çift tıklaman yeterli. Çalışan eski sürümü kendisi kapatıp
+yerini alır; ayarların korunur ve Discord bu sırada susturulmuş kalır.
+Yeni exe'yi başka klasöre koyduysan otomatik başlatma oraya güncellenir,
+eski exe'yi silebilirsin.
+
+
+OYUNLAR / ANTI-CHEAT
+Oyunlara dokunmaz: bellek okuma, enjeksiyon, sürücü yok. Sadece Windows'un ses
+karıştırıcısının kullandığı resmi ses API'si ile Discord'un o cihazdaki sesini kapatır.
+İnternete bağlanmaz.
+
+
+KAYNAK KULLANIMI
+Sürekli tarama yapmaz, Windows'un ses olaylarını dinler. Boştayken işlemci
+kullanımı sıfıra yakın, Görev Yöneticisi'nde yaklaşık 2 MB bellek görünür.
+
+
+KALDIRMA
+1. Simgeye sağ tık > "Windows açılışında başlat" işaretini kaldır > "Çıkış".
+2. Exe'yi ve %APPDATA%\SonarDiscordMute klasörünü sil.
+
+
+GELİŞMİŞ
+- Ayarlar: %APPDATA%\SonarDiscordMute\ayarlar.ini
+  "uygulama=discord" satırı, adında hangi kelime geçen programın susturulacağını belirler.
+- Kaynak kodu SonarDiscordMute.cs dosyasında. Derlemek için build.bat'a çift tıkla
+  (Windows'ta hazır gelen .NET derleyicisini kullanır, ek kurulum gerekmez).

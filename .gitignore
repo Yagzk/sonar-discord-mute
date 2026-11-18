@@ -1,0 +1,4 @@
+# Derleme ciktilari release'e eklenir, repoya konmaz
+*.exe
+*.zip
+*.pdb
