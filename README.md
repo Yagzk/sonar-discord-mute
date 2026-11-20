@@ -7,10 +7,13 @@
 **SteelSeries Sonar + Discord ekran paylaşımındaki yankı sorununu kalıcı olarak çözen,
 arka planda sessizce çalışan küçük bir Windows aracı.**
 
+*Fixes the echo your viewers hear when you screen-share with audio on Discord while using SteelSeries Sonar.*
+
 [![Son sürüm](https://img.shields.io/github/v/release/Yagzk/sonar-discord-mute?label=s%C3%BCr%C3%BCm&color=2ea043)](https://github.com/Yagzk/sonar-discord-mute/releases/latest)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4)
 ![Boyut](https://img.shields.io/badge/exe-~40%20KB-555)
 ![Kurulum gerekmez](https://img.shields.io/badge/ek%20kurulum-gerekmez-555)
+[![Lisans: MIT](https://img.shields.io/badge/lisans-MIT-555)](LICENSE)
 
 ### [⬇ İndir (SonarDiscordMute.zip)](https://github.com/Yagzk/sonar-discord-mute/releases/latest/download/SonarDiscordMute.zip)
 
@@ -18,17 +21,46 @@ arka planda sessizce çalışan küçük bir Windows aracı.**
 
 ---
 
+## Bu sorunu yaşıyor musun?
+
+- [x] Bilgisayarında **SteelSeries GG / Sonar** açık (SteelSeries kulaklık kullananlarda genelde öyle).
+- [x] Discord'da **sesi açık şekilde ekran paylaşıyorsun** ya da yayın (Go Live) yapıyorsun.
+- [x] Yayını izleyenler **yankı duyduklarını**, kendi seslerinin ve sohbetin yayından
+      **ikinci kez, gecikmeli** geldiğini söylüyor.
+
+Üçü de tutuyorsa bu program tam olarak bunun için.
+
 ## Sorun
 
-SteelSeries Sonar kullanırken Discord'da **sesli ekran paylaşımı** yapınca izleyenler yankı duyuyor.
-Bilinen çözüm, Windows'un **ses düzeyi karıştırıcısında** `SteelSeries Sonar - Microphone`
-cihazında Discord'un sesini kapatmak. Ama bu ayar zamanla geri açılabiliyor ve her seferinde
-elle kapatmak gerekiyor.
+Sonar, bilgisayardaki bütün sesleri kendi sanal ses cihazlarından geçirir:
+`Sonar - Gaming`, `Sonar - Chat`, `Sonar - Media`, `Sonar - Microphone`...
+Discord'un sesi `SteelSeries Sonar - Microphone` cihazına da gidiyor ve oradan
+senin ekran paylaşımına karışıyor. Sonuçta:
+
+```
+Arkadaşın konuşur ──► Discord sana çalar ──► ses "Sonar - Microphone"a da düşer
+        ▲                                                   │
+        └──────────── yayınından geri duyar ◄───────────────┘   (yankı)
+```
+
+Sen bir şey fark etmezsin, ama yayını izleyen herkes konuşmaları iki kez duyar.
+
+## Elle çözüm (ve neden yetmiyor)
+
+Bilinen geçici çözüm şu:
+
+1. Görev çubuğundaki ses simgesine sağ tıkla → **Ses düzeyi karıştırıcısını aç**.
+2. Cihaz olarak `SteelSeries Sonar - Microphone`'u seç.
+3. Oradaki **Discord**'un sesini kapat.
+
+Bu yankıyı hemen keser. Ama ayar kalıcı değil: Discord yeni bir ses oturumu açtığında ya da
+yeniden başladığında ses geri açılabiliyor. O zaman her yayından önce karıştırıcıya girip
+tekrar kapatman gerekiyor.
 
 ## Çözüm
 
-Sonar Discord Mute bu işi senin yerine yapar: seçtiğin cihazda Discord'un sesini kapatır
-ve **sürekli kapalı tutar**.
+Sonar Discord Mute bu adımı senin yerine yapar: `SteelSeries Sonar - Microphone` cihazında
+Discord'un sesini kapatır ve **sürekli kapalı tutar**.
 
 - 🔇 Discord o cihazda yeni bir ses oturumu açtığı anda susturur
 - ↩️ Biri karıştırıcıdan sesi geri açarsa milisaniyeler içinde tekrar kapatır
@@ -170,19 +202,34 @@ build.bat
 | Yankı hâlâ var | Simgeye çift tıkla ve doğru cihazın (`Sonar - Microphone`) seçili olduğunu kontrol et. |
 | Kendi duyduğum Discord sesi | Sadece seçili cihazdaki Discord oturumu kapatılır; diğer cihazlara (ör. `Sonar - Chat`) dokunulmaz. |
 
+## Lisans
+
+[MIT](LICENSE). Kullanabilir, değiştirebilir ve paylaşabilirsin; lisans metnini korumak yeterli.
+
+SteelSeries, Sonar ve Discord kendi sahiplerinin markalarıdır. Bu proje onlarla bağlantılı değildir.
+
 ---
 
 <details>
 <summary>🇬🇧 English</summary>
 
-**Sonar Discord Mute** is a tiny Windows tray app that fixes the echo heard by viewers when you
-screen-share with audio on Discord while using SteelSeries Sonar. The known manual fix is muting Discord
-on the `SteelSeries Sonar - Microphone` device in the Windows volume mixer. This app does that for you
-and keeps it muted: it listens to Windows Core Audio events (new sessions, unmutes, device changes) and
+**The problem:** with SteelSeries Sonar (SteelSeries GG) running, screen-sharing or going live on Discord
+*with audio* makes your viewers hear an echo. Their own voices and the call come back to them a second time,
+delayed, through your stream. Discord's audio also ends up on the `SteelSeries Sonar - Microphone`
+virtual device and leaks back into the stream.
+
+**The manual fix:** open the Windows volume mixer, pick the `SteelSeries Sonar - Microphone` device and
+mute Discord there. It works, but the setting doesn't stick: Discord can come back unmuted when it opens
+a new audio session or restarts.
+
+**What this app does:** **Sonar Discord Mute** is a tiny Windows tray app that applies that fix for you
+and keeps it applied. It listens to Windows Core Audio events (new sessions, unmutes, device changes) and
 re-mutes within milliseconds, idling at ~0% CPU and ~2 MB RAM. It never touches game processes
 (no memory access, injection, drivers or hooks) and makes no network connections.
 
 Download the latest release, run the exe, confirm the auto-selected Sonar Microphone device, done.
 To update, just run the newer exe; it takes over from the running old version.
+
+MIT licensed. Not affiliated with SteelSeries or Discord.
 
 </details>
