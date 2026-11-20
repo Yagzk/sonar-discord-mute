@@ -93,15 +93,39 @@ Saatin yanında küçük bir simge olur (görünmüyorsa `^` okuna tıkla). Reng
 
 Simgeye **sağ tıkla**:
 
-<p align="center"><img src="docs/menu.png" alt="Tepsi menüsü" width="413"></p>
+<p align="center"><img src="docs/menu.png" alt="Tepsi menüsü" width="415"></p>
 
 - **Duraklat**: Discord'un sesini geri açar, tekrar tıklayınca devam eder.
+- **Giriş/çıkış seslerini koru (deneysel)**: Discord'un giriş/çıkış ve bildirim seslerini susturmaz
+  ([aşağıya bak](#girişçıkış-sesleri-duyulmuyorsa)).
 - **Cihazı değiştir**: Kurulum penceresini açar (simgeye ya da exe'ye çift tıklamak da açar).
 - **Windows açılışında başlat**: Otomatik başlatmayı açar/kapatır.
+- **Tanı bilgisini kopyala**: Discord'un hangi ses oturumunun hangi cihazda olduğunu panoya kopyalar.
 - **Çıkış**: Discord'un o cihazdaki sesini geri açar ve programı kapatır.
 
 > Bilgisayar kapanırken Discord o cihazda susturulmuş kalır; Windows bu ayarı hatırlar.
 > Sesi sadece menüden **Çıkış** deyince geri açılır.
+
+## Giriş/çıkış sesleri duyulmuyorsa
+
+Windows tek tek sesleri değil, bir uygulamanın **ses oturumunu** susturabilir. Discord ise
+seslerini iki ayrı iç süreçten çalar:
+
+| Discord süreci | Ne çalar |
+|---|---|
+| Ses motoru | Kanaldaki konuşmalar |
+| Chromium ses servisi | Giriş/çıkış, bildirim gibi arayüz sesleri |
+
+Discord'un arayüz sesleri de `Sonar - Microphone` cihazına gidiyorsa, varsayılan ayar
+(ve karıştırıcıdan elle susturmak) onları da kapatır; giriş/çıkış seslerini duymazsın.
+
+**Çözüm:** Simgeye sağ tıkla → **Giriş/çıkış seslerini koru (deneysel)**. Program artık arayüz seslerini
+susturmaz, sadece diğerlerini susturur. Sonra sesli bir ekran paylaşımı yapıp izleyene yankı olup olmadığını sor:
+
+- **Yankı yok, giriş/çıkış sesleri geliyor:** Tamam, böyle kalsın.
+- **Yankı geri geldi:** Seçeneği kapat. Demek ki yankı, arayüz sesleriyle aynı Discord oturumundan geliyor.
+  Simgeye sağ tıkla → **Tanı bilgisini kopyala** ve çıkan metni
+  [issue olarak](https://github.com/Yagzk/sonar-discord-mute/issues/new) paylaş; oturumların nerede olduğunu gösterir.
 
 ## Güncelleme
 
@@ -135,7 +159,8 @@ Program anti-cheat sistemlerinin aradığı türden hiçbir şey yapmaz:
 - ✅ Sadece Windows'un ses karıştırıcısının da kullandığı resmi **Core Audio API** ile tek bir
   cihazdaki Discord ses oturumunu susturur.
 - ✅ Oturumun hangi uygulamaya ait olduğunu Windows'un ses oturumu bilgisinden okur;
-  normalde oyun dahil hiçbir programın sürecine erişmez.
+  oyun dahil başka hiçbir programın sürecine erişmez. Sadece "Giriş/çıkış seslerini koru" açıkken
+  ve tanı bilgisinde, Discord'un kendi süreçlerinin türüne bakar.
 - ✅ İnternete bağlanmaz, veri toplamaz. Değiştirdiği tek sistem ayarı isteğe bağlı otomatik başlatma kaydıdır
   (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
 - ✅ Kaynak kodu tek bir dosya ([`SonarDiscordMute.cs`](SonarDiscordMute.cs)); okuyabilir ve kendin derleyebilirsin.
@@ -163,6 +188,8 @@ flowchart LR
 - Bütün COM işleri tek bir MTA thread'inde yapılır; bildirimler sadece bu thread'i uyandırır.
 - Exe adı oturum kimliğinden (`...|\Device\...\Discord.exe%b{...}`) okunur. Klasör veya kullanıcı adı
   eşleşmesin diye sadece dosya adına bakılır.
+- Discord oturumunun rolü süreç komut satırından anlaşılır: `--type=renderer` ses motoru,
+  `audio.mojom.AudioService` arayüz sesleri. Bu sadece Discord süreçleri için yapılır.
 - Cihaz kimliği değişirse (ör. Sonar yeniden kurulursa) aynı isimli cihaz bulunur.
 - Tek kopya çalışır. Daha yeni bir sürüm açılırsa eskisi kapanıp yerini ona bırakır.
 
@@ -177,6 +204,7 @@ Ayarlar `%APPDATA%\SonarDiscordMute\ayarlar.ini` dosyasında tutulur:
 | `cihaz_id` | Seçilen ses cihazının Windows kimliği |
 | `cihaz_adi` | Cihazın adı (kimlik değişirse bununla bulunur) |
 | `uygulama` | Adında bu kelime geçen programlar susturulur (varsayılan: `discord`; PTB/Canary de dahil) |
+| `arayuz_seslerini_koru` | `1` ise Discord'un giriş/çıkış ve bildirim seslerini susturmaz (menüdeki seçenek) |
 
 ## Kaynaktan derleme
 
@@ -199,7 +227,8 @@ build.bat
 |---|---|
 | Simge turuncu | SteelSeries GG'yi aç. Düzelmezse simgeye çift tıkla ve cihazı tekrar seç. |
 | Menüde "şu an bu cihazda Discord sesi yok" yazıyor | Normal. Discord o cihazda ses açtığı anda susturulur. |
-| Yankı hâlâ var | Simgeye çift tıkla ve doğru cihazın (`Sonar - Microphone`) seçili olduğunu kontrol et. |
+| Yankı hâlâ var | Simgeye çift tıkla ve doğru cihazın (`Sonar - Microphone`) seçili olduğunu kontrol et. "Giriş/çıkış seslerini koru" açıksa kapat. |
+| Giriş/çıkış seslerini duymuyorum | Simgeye sağ tıkla → **Giriş/çıkış seslerini koru (deneysel)**. |
 | Kendi duyduğum Discord sesi | Sadece seçili cihazdaki Discord oturumu kapatılır; diğer cihazlara (ör. `Sonar - Chat`) dokunulmaz. |
 
 ## Lisans
@@ -226,6 +255,10 @@ a new audio session or restarts.
 and keeps it applied. It listens to Windows Core Audio events (new sessions, unmutes, device changes) and
 re-mutes within milliseconds, idling at ~0% CPU and ~2 MB RAM. It never touches game processes
 (no memory access, injection, drivers or hooks) and makes no network connections.
+
+Muting works per audio session, and Discord plays call audio (voice engine) and UI sounds such as
+join/leave (Chromium audio service) from separate processes. If you lose the join/leave sounds, enable
+**"Giriş/çıkış seslerini koru"** (keep join/leave sounds) in the tray menu to leave the UI-sound session unmuted.
 
 Download the latest release, run the exe, confirm the auto-selected Sonar Microphone device, done.
 To update, just run the newer exe; it takes over from the running old version.

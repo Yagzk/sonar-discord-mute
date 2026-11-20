@@ -25,10 +25,19 @@ SONRASI
     yeşil   = çalışıyor
     turuncu = Sonar cihazı bulunamadı (SteelSeries GG kapalı olabilir)
     gri     = duraklatıldı
-- Simgeye sağ tıkla: Duraklat / Cihazı değiştir / Windows açılışında başlat / Çıkış
+- Simgeye sağ tıkla: Duraklat / Giriş/çıkış seslerini koru / Cihazı değiştir /
+  Windows açılışında başlat / Tanı bilgisini kopyala / Çıkış
 - Exe'ye tekrar çift tıklarsan ya da simgeye çift tıklarsan ayar penceresi açılır.
 - Bilgisayar kapanınca da Discord o cihazda kapalı kalır (Windows bunu hatırlar).
   Sadece menüden "Çıkış" dersen Discord'un sesi o cihazda geri açılır.
+
+
+GİRİŞ/ÇIKIŞ SESLERİNİ DUYMUYORSAN
+Discord konuşmaları ve arayüz seslerini (giriş/çıkış, bildirim) ayrı ayrı çalar.
+Simgeye sağ tıkla > "Giriş/çıkış seslerini koru (deneysel)". Program o sesleri artık
+susturmaz. Sonra sesli ekran paylaşıp izleyene yankı var mı diye sor:
+- Yankı yoksa: böyle kalsın.
+- Yankı geri geldiyse: seçeneği kapat, "Tanı bilgisini kopyala" de ve çıkan metni gönder.
 
 
 GÜNCELLEME

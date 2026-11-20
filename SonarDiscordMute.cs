@@ -22,8 +22,8 @@ using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("Sonar Discord Mute")]
 [assembly: System.Reflection.AssemblyProduct("Sonar Discord Mute")]
-[assembly: System.Reflection.AssemblyVersion("1.1.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.1.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.2.0.0")]
 
 namespace SonarDiscordMute
 {
@@ -301,6 +301,32 @@ namespace SonarDiscordMute
             return path == null ? null : Path.GetFileName(path);
         }
 
+        [DllImport("ntdll.dll")]
+        static extern int NtQueryInformationProcess(IntPtr process, int infoClass, IntPtr buffer, int length, out int returnLength);
+
+        // Sadece Discord surecleri icin kullanilir (rolunu anlamak icin); oyunlara dokunulmaz.
+        public static string GetCommandLine(uint processId)
+        {
+            IntPtr handle = OpenProcess(QueryLimitedInformation, false, processId);
+            if (handle == IntPtr.Zero) return null;
+            try
+            {
+                int needed;
+                NtQueryInformationProcess(handle, 60 /* ProcessCommandLineInformation */, IntPtr.Zero, 0, out needed);
+                if (needed <= 0 || needed > 1 << 20) return null;
+                IntPtr buffer = Marshal.AllocHGlobal(needed);
+                try
+                {
+                    if (NtQueryInformationProcess(handle, 60, buffer, needed, out needed) != 0) return null;
+                    int length = (ushort)Marshal.ReadInt16(buffer); // UNICODE_STRING.Length (bayt)
+                    IntPtr text = Marshal.ReadIntPtr(buffer, IntPtr.Size);
+                    return text == IntPtr.Zero ? null : Marshal.PtrToStringUni(text, length / 2);
+                }
+                finally { Marshal.FreeHGlobal(buffer); }
+            }
+            finally { CloseHandle(handle); }
+        }
+
         public static string GetExePath(uint processId)
         {
             IntPtr handle = OpenProcess(QueryLimitedInformation, false, processId);
@@ -312,6 +338,131 @@ namespace SonarDiscordMute
                 return QueryFullProcessImageName(handle, 0, buffer, ref size) ? buffer.ToString() : null;
             }
             finally { CloseHandle(handle); }
+        }
+    }
+
+    // Discord sesleri farkli ic sureclerden calar:
+    //  - renderer: ses motoru (kanaldaki konusmalar)
+    //  - Chromium ses servisi: arayuz sesleri (giris/cikis, bildirim)
+    public enum DiscordRole { Unknown, Main, VoiceEngine, UiSounds, Other }
+
+    public static class DiscordRoles
+    {
+        public static DiscordRole Classify(string commandLine)
+        {
+            if (string.IsNullOrEmpty(commandLine)) return DiscordRole.Unknown;
+            if (commandLine.IndexOf("--type=", StringComparison.Ordinal) < 0) return DiscordRole.Main;
+            if (commandLine.IndexOf("audio.mojom.AudioService", StringComparison.Ordinal) >= 0) return DiscordRole.UiSounds;
+            if (commandLine.IndexOf("--type=renderer", StringComparison.Ordinal) >= 0) return DiscordRole.VoiceEngine;
+            return DiscordRole.Other;
+        }
+
+        public static DiscordRole OfProcess(uint processId)
+        {
+            return processId == 0 ? DiscordRole.Unknown : Classify(ProcessInfo.GetCommandLine(processId));
+        }
+
+        public static string Label(DiscordRole role)
+        {
+            switch (role)
+            {
+                case DiscordRole.Main: return "ana süreç";
+                case DiscordRole.VoiceEngine: return "ses motoru (konuşmalar)";
+                case DiscordRole.UiSounds: return "arayüz sesleri (giriş/çıkış, bildirim)";
+                case DiscordRole.Other: return "diğer";
+                default: return "bilinmiyor";
+            }
+        }
+    }
+
+    // "Tani bilgisini kopyala": hangi Discord oturumu hangi cihazda, ne durumda
+    public static class Diagnostics
+    {
+        public static string BuildReport(AppConfig config)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Sonar Discord Mute " + typeof(Diagnostics).Assembly.GetName().Version.ToString(3) + " – tanı bilgisi");
+            sb.AppendLine("Seçili cihaz: " + config.DeviceName);
+            sb.AppendLine("Giriş/çıkış seslerini koru: " + (config.KeepUiSounds ? "açık" : "kapalı"));
+            IMMDeviceEnumerator enumerator = null;
+            try
+            {
+                enumerator = AudioDevices.CreateEnumerator();
+                sb.AppendLine("Windows varsayılan çıkış: " + DefaultName(enumerator, ERole.Multimedia));
+                sb.AppendLine("Windows varsayılan iletişim çıkışı: " + DefaultName(enumerator, ERole.Communications));
+                sb.AppendLine("Discord ses oturumları:");
+                int count = 0;
+                foreach (AudioDeviceInfo device in AudioDevices.ListActiveOutputs())
+                    count += AppendDeviceSessions(sb, enumerator, device, config.ProcessMatch);
+                if (count == 0) sb.AppendLine("  (yok – Discord şu an hiçbir cihazda ses açmamış)");
+            }
+            catch (Exception ex) { sb.AppendLine("Hata: " + ex.Message); }
+            finally { AudioDevices.Release(enumerator); }
+            return sb.ToString();
+        }
+
+        static string DefaultName(IMMDeviceEnumerator enumerator, ERole role)
+        {
+            IMMDevice device = null;
+            try
+            {
+                enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, role, out device);
+                return AudioDevices.GetName(device);
+            }
+            catch { return "-"; }
+            finally { AudioDevices.Release(device); }
+        }
+
+        static int AppendDeviceSessions(StringBuilder sb, IMMDeviceEnumerator enumerator, AudioDeviceInfo info, string match)
+        {
+            int count = 0;
+            IMMDevice device = null;
+            IAudioSessionManager2 manager = null;
+            IAudioSessionEnumerator sessions = null;
+            try
+            {
+                enumerator.GetDevice(info.Id, out device);
+                Guid iid = typeof(IAudioSessionManager2).GUID;
+                object instance;
+                device.Activate(ref iid, 23, IntPtr.Zero, out instance);
+                manager = (IAudioSessionManager2)instance;
+                manager.GetSessionEnumerator(out sessions);
+                int n;
+                sessions.GetCount(out n);
+                for (int i = 0; i < n; i++)
+                {
+                    object raw = null;
+                    try
+                    {
+                        sessions.GetSession(i, out raw);
+                        var control = (IAudioSessionControl2)raw;
+                        string sessionId;
+                        control.GetSessionIdentifier(out sessionId);
+                        string exe = AudioDevices.ExeFromSessionId(sessionId);
+                        if (exe == null || exe.IndexOf(match, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        uint pid;
+                        control.GetProcessId(out pid);
+                        AudioSessionState state;
+                        control.GetState(out state);
+                        bool muted;
+                        ((ISimpleAudioVolume)raw).GetMute(out muted);
+                        sb.AppendLine("  [" + info.Name + "] " + DiscordRoles.Label(DiscordRoles.OfProcess(pid)) +
+                                      " | pid " + pid + " | " + (state == AudioSessionState.Active ? "çalıyor" : "beklemede") +
+                                      " | " + (muted ? "susturulmuş" : "açık"));
+                        count++;
+                    }
+                    catch { }
+                    finally { AudioDevices.Release(raw); }
+                }
+            }
+            catch { }
+            finally
+            {
+                AudioDevices.Release(sessions);
+                AudioDevices.Release(manager);
+                AudioDevices.Release(device);
+            }
+            return count;
         }
     }
 
@@ -345,6 +496,7 @@ namespace SonarDiscordMute
         public string DeviceName;
         public int Sessions;
         public int Muted;
+        public int Kept;   // "giris/cikis seslerini koru" ile acik birakilan oturumlar
         public bool Paused;
         public string Error;
 
@@ -352,7 +504,7 @@ namespace SonarDiscordMute
         {
             return string.Concat(new string[] {
                 DeviceFound ? "1" : "0", "|", DeviceName, "|", Sessions.ToString(), "|",
-                Muted.ToString(), "|", Paused ? "1" : "0", "|", Error });
+                Muted.ToString(), "|", Kept.ToString(), "|", Paused ? "1" : "0", "|", Error });
         }
     }
 
@@ -367,8 +519,9 @@ namespace SonarDiscordMute
         readonly string processMatch;
         Guid ownContext = Guid.NewGuid(); // kendi yaptigimiz degisiklikleri tanimak icin
         string targetId, targetName;
-        volatile bool paused, stopping, releasePending, retargetPending, devicesChanged;
+        volatile bool paused, stopping, releasePending, retargetPending, devicesChanged, keepUiSounds;
         Thread worker;
+        readonly Dictionary<uint, DiscordRole> roleCache = new Dictionary<uint, DiscordRole>();
 
         // Asagidakileri sadece motor thread'i kullanir
         IMMDeviceEnumerator enumerator;
@@ -377,7 +530,7 @@ namespace SonarDiscordMute
         SessionCreatedEvents sessionCreatedEvents;
         string attachedId, attachedName;
         readonly Dictionary<string, TrackedSession> tracked = new Dictionary<string, TrackedSession>(StringComparer.Ordinal);
-        int lastSessions, lastMuted;
+        int lastSessions, lastMuted, lastKept;
         string lastError, lastStatusKey;
 
         public event Action<EngineStatus> StatusChanged;
@@ -398,6 +551,13 @@ namespace SonarDiscordMute
             worker.Name = "SonarDiscordMute";
             worker.SetApartmentState(ApartmentState.MTA); // ses oturumu bildirimleri MTA ister
             worker.Start();
+        }
+
+        // true: Discord'un arayuz seslerini (giris/cikis, bildirim) susturma
+        public void SetKeepUiSounds(bool value)
+        {
+            keepUiSounds = value;
+            wake.Set();
         }
 
         public void SetPaused(bool value)
@@ -592,7 +752,8 @@ namespace SonarDiscordMute
         void Scan(bool enforce)
         {
             IAudioSessionEnumerator sessions = null;
-            int found = 0, muted = 0;
+            int found = 0, muted = 0, kept = 0;
+            bool keepUi = keepUiSounds;
             try
             {
                 manager.GetSessionEnumerator(out sessions);
@@ -613,12 +774,15 @@ namespace SonarDiscordMute
                         if (state == AudioSessionState.Expired || !IsTargetProcess(control)) continue;
 
                         found++;
+                        bool spare = enforce && keepUi && RoleOf(control) == DiscordRole.UiSounds;
+                        bool wantMuted = enforce && !spare;
                         var volume = (ISimpleAudioVolume)raw;
                         bool isMuted;
                         volume.GetMute(out isMuted);
-                        if (enforce && !isMuted) { volume.SetMute(true, ref ownContext); isMuted = true; }
-                        else if (!enforce && isMuted) { volume.SetMute(false, ref ownContext); isMuted = false; }
-                        if (isMuted) muted++;
+                        if (wantMuted && !isMuted) { volume.SetMute(true, ref ownContext); isMuted = true; }
+                        else if (!wantMuted && isMuted) { volume.SetMute(false, ref ownContext); isMuted = false; }
+                        if (spare) kept++;
+                        else if (isMuted) muted++;
 
                         if (enforce) keep = Track(control);
                     }
@@ -641,6 +805,21 @@ namespace SonarDiscordMute
             }
             lastSessions = found;
             lastMuted = muted;
+            lastKept = kept;
+        }
+
+        DiscordRole RoleOf(IAudioSessionControl2 control)
+        {
+            uint processId;
+            if (control.GetProcessId(out processId) < 0 || processId == 0) return DiscordRole.Unknown;
+            DiscordRole role;
+            if (!roleCache.TryGetValue(processId, out role))
+            {
+                role = DiscordRoles.OfProcess(processId);
+                if (roleCache.Count > 64) roleCache.Clear();
+                roleCache[processId] = role;
+            }
+            return role;
         }
 
         // Yeni oturumsa ses olaylarina abone olur; birisi sesi acarsa aninda haber alinir.
@@ -681,6 +860,8 @@ namespace SonarDiscordMute
             attachedName = null;
             lastSessions = 0;
             lastMuted = 0;
+            lastKept = 0;
+            roleCache.Clear();
         }
 
         bool IsTargetProcess(IAudioSessionControl2 control)
@@ -706,6 +887,7 @@ namespace SonarDiscordMute
             lock (targetLock) status.DeviceName = attachedName ?? targetName;
             status.Sessions = lastSessions;
             status.Muted = lastMuted;
+            status.Kept = lastKept;
             status.Paused = paused;
             status.Error = lastError;
 
@@ -785,6 +967,7 @@ namespace SonarDiscordMute
         public string DeviceId = "";
         public string DeviceName = "";
         public string ProcessMatch = "discord";
+        public bool KeepUiSounds;
 
         public bool HasDevice { get { return DeviceId.Length > 0 || DeviceName.Length > 0; } }
 
@@ -812,6 +995,7 @@ namespace SonarDiscordMute
                     if (key == "cihaz_id") config.DeviceId = value;
                     else if (key == "cihaz_adi") config.DeviceName = value;
                     else if (key == "uygulama" && value.Length > 0) config.ProcessMatch = value;
+                    else if (key == "arayuz_seslerini_koru") config.KeepUiSounds = value == "1";
                 }
             }
             catch { }
@@ -825,7 +1009,8 @@ namespace SonarDiscordMute
                 "# Sonar Discord Mute ayarlari",
                 "cihaz_id=" + DeviceId,
                 "cihaz_adi=" + DeviceName,
-                "uygulama=" + ProcessMatch
+                "uygulama=" + ProcessMatch,
+                "arayuz_seslerini_koru=" + (KeepUiSounds ? "1" : "0")
             }, new UTF8Encoding(false));
         }
     }
@@ -1116,7 +1301,7 @@ namespace SonarDiscordMute
         readonly MuteEngine engine;
         readonly NotifyIcon tray;
         readonly ContextMenuStrip menu;
-        readonly ToolStripMenuItem statusItem, deviceItem, pauseItem, startupItem;
+        readonly ToolStripMenuItem statusItem, deviceItem, pauseItem, keepUiItem, startupItem;
         readonly RegisteredWaitHandle showWait, quitWait;
         readonly System.Windows.Forms.Timer trimTimer;
         SetupForm settingsForm;
@@ -1138,7 +1323,18 @@ namespace SonarDiscordMute
             pauseItem = new ToolStripMenuItem("Duraklat (Discord sesini aç)");
             pauseItem.CheckOnClick = true;
             pauseItem.Click += delegate { engine.SetPaused(pauseItem.Checked); };
+            keepUiItem = new ToolStripMenuItem("Giriş/çıkış seslerini koru (deneysel)");
+            keepUiItem.CheckOnClick = true;
+            keepUiItem.Checked = config.KeepUiSounds;
+            keepUiItem.ToolTipText = "Discord'un giriş/çıkış ve bildirim seslerini susturmaz. Yankı geri gelirse kapat.";
+            keepUiItem.Click += delegate
+            {
+                config.KeepUiSounds = keepUiItem.Checked;
+                try { config.Save(configPath); } catch { }
+                engine.SetKeepUiSounds(keepUiItem.Checked);
+            };
             var changeItem = new ToolStripMenuItem("Cihazı değiştir...", null, delegate { ShowSettings(); });
+            var diagnosticsItem = new ToolStripMenuItem("Tanı bilgisini kopyala", null, delegate { CopyDiagnostics(); });
             startupItem = new ToolStripMenuItem("Windows açılışında başlat");
             startupItem.CheckOnClick = true;
             startupItem.Checked = startupAvailable && StartupEntry.IsEnabled();
@@ -1153,8 +1349,8 @@ namespace SonarDiscordMute
             menu = new ContextMenuStrip();
             menu.Items.AddRange(new ToolStripItem[] {
                 statusItem, deviceItem, new ToolStripSeparator(),
-                pauseItem, changeItem, startupItem, new ToolStripSeparator(),
-                exitItem });
+                pauseItem, keepUiItem, changeItem, startupItem, new ToolStripSeparator(),
+                diagnosticsItem, exitItem });
 
             tray = new NotifyIcon();
             tray.Icon = Icons.Get(Icons.Warning, SystemInformation.SmallIconSize.Width);
@@ -1164,7 +1360,8 @@ namespace SonarDiscordMute
             tray.Visible = true;
 
             engine = new MuteEngine(config.DeviceId, config.DeviceName, config.ProcessMatch);
-            engine.StatusChanged += delegate(EngineStatus status) { PostToUi(delegate { ApplyStatus(status); }); };
+            engine.SetKeepUiSounds(config.KeepUiSounds);
+            engine.StatusChanged +=delegate(EngineStatus status) { PostToUi(delegate { ApplyStatus(status); }); };
             engine.Start();
 
             // Program tekrar acilirsa (ikinci kopya) ayar penceresini goster
@@ -1216,6 +1413,11 @@ namespace SonarDiscordMute
                 text = "Aktif – şu an bu cihazda Discord sesi yok";
                 color = Icons.Active;
             }
+            else if (s.Muted + s.Kept == s.Sessions && s.Kept > 0)
+            {
+                text = "Aktif – " + s.Muted + " oturum susturuldu, giriş/çıkış sesleri açık";
+                color = Icons.Active;
+            }
             else if (s.Muted == s.Sessions)
             {
                 text = "Aktif – Discord susturuldu (" + s.Sessions + " oturum)";
@@ -1230,6 +1432,27 @@ namespace SonarDiscordMute
             deviceItem.Text = "Cihaz: " + Shorten(s.DeviceName, 60);
             tray.Text = Shorten("Sonar Discord Mute\n" + text, 63);
             tray.Icon = Icons.Get(color, SystemInformation.SmallIconSize.Width);
+        }
+
+        void CopyDiagnostics()
+        {
+            var thread = new Thread(delegate()
+            {
+                string report = Diagnostics.BuildReport(config);
+                PostToUi(delegate
+                {
+                    try
+                    {
+                        Clipboard.SetText(report);
+                        tray.ShowBalloonTip(5000, "Sonar Discord Mute",
+                            "Tanı bilgisi panoya kopyalandı. Discord'a yapıştırıp gönderebilirsin.", ToolTipIcon.Info);
+                    }
+                    catch { }
+                });
+            });
+            thread.IsBackground = true;
+            thread.SetApartmentState(ApartmentState.MTA);
+            thread.Start();
         }
 
         void ShowSettings()
